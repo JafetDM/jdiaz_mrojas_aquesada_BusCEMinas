@@ -1,6 +1,6 @@
 #lang racket
 (require racket/gui/base)
-(require "logic.rkt") ;; tu lógica funcional con make-bomb-grid y grid-ref
+(require "logic.rkt") ;; lógica funcional con make-bomb-grid y grid-ref
 
 ;; =============================================
 ;; Ventana de configuración
@@ -8,8 +8,8 @@
 (define config-frame
   (new frame%
        [label "Configuración Busca Minas"]
-       [width 300]
-       [height 200]))
+       [width 350]
+       [height 250]))
 
 (define config-panel (new vertical-panel% [parent config-frame]))
 
@@ -21,7 +21,18 @@
 (new message% [parent config-panel] [label "Número de columnas (8-15):"])
 (define cols-field (new text-field% [parent config-panel] [label "8"]))
 
+;; Dificultad con choice%
+(new message% [parent config-panel] [label "Dificultad:"])
+(define difficulty-choice
+  (new choice%
+       [parent config-panel]
+       [label "Selecciona dificultad:"] ; obligatorio en choice%
+       [choices '("Fácil" "Intermedio" "Difícil")]
+       [selection 0])) ; por defecto "Fácil"
+
+;; =============================================
 ;; Botón Iniciar
+;; =============================================
 (new button%
      [parent config-panel]
      [label "Iniciar Juego"]
@@ -33,9 +44,12 @@
                 (< n-filas 8) (> n-filas 15)
                 (< n-cols 8) (> n-cols 15))
             (message-box "Error" "Debes ingresar valores entre 8 y 15.")
-            (begin
-              (send config-frame show #f) ;; cerrar ventana de configuración
-              (start-game n-filas n-cols))))])
+            (let* ([selected (send difficulty-choice get-string-selection)]
+                   [num-bombs (cond [(string=? selected "Fácil") 5]
+                                    [(string=? selected "Intermedio") 10]
+                                    [else 15])])
+              (send config-frame show #f)
+              (start-game n-filas n-cols num-bombs))))])
 
 ;; Mostrar ventana de configuración
 (send config-frame show #t)
@@ -43,14 +57,15 @@
 ;; =============================================
 ;; Función que abre la ventana principal del juego
 ;; =============================================
-(define (start-game rows cols)
-  ;; crear la grilla con bombas
-  (define grid (make-bomb-grid rows cols 5))
+(define (start-game rows cols num-bombs)
+  ;; Crear la grilla con bombas usando lógica funcional
+  (define grid (make-bomb-grid rows cols num-bombs))
 
+  ;; Crear ventana del juego
   (define frame (new frame%
                      [label (format "Busca Minas (~ax~a)" rows cols)]
-                     [width 700]
-                     [height 700]))
+                     [width (+ (* 30 cols) 50)]
+                     [height (+ (* 30 rows) 100)]))
   (define main-panel (new vertical-panel% [parent frame]))
 
   ;; Botón Reiniciar arriba
@@ -61,12 +76,12 @@
        [callback
         (lambda (btn evt)
           (send frame show #f) ;; cerrar ventana del juego
-          (send config-frame show #t))]) ;; volver a mostrar config
+          (send config-frame show #t))]) ;; volver a ventana de configuración
 
   ;; Panel de la cuadrícula
   (define grid-panel (new vertical-panel% [parent main-panel]))
 
-  ;; Crear la cuadrícula
+  ;; Crear la cuadrícula con botones
   (for ([r rows])
     (define row-panel (new horizontal-panel% [parent grid-panel]))
     (for ([c cols])
@@ -77,10 +92,10 @@
            [min-height 30]
            [callback
             (lambda (b e)
-              ;; mostrar el valor real de la grilla (0 o 1)
-              (define val (grid-ref grid r c))
-              (send b set-label (number->string val))
-              (displayln (format "Clic en (~a,~a): ~a" r c val)))])))
+              ;; Mostrar valor de la grilla (0 o 1)
+              (let ([val (grid-ref grid r c)])
+                (send b set-label (number->string val))
+                (displayln (format "Clic en (~a,~a): ~a" r c val))))])))
 
+  ;; Mostrar ventana del juego
   (send frame show #t))
-
