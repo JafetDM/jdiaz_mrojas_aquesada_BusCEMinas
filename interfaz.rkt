@@ -1,32 +1,81 @@
-#lang racket/gui
-(require "logic.rkt")
+#lang racket
+(require racket/gui/base)
+(require "logic.rkt") ;; tu lógica funcional
 
-;; ============= Interfaz gráfica =============
-(define rows 5)
-(define cols 5)
+;; =============================================
+;; Ventana de configuración
+;; =============================================
+(define config-frame
+  (new frame%
+       [label "Configuración Busca Minas"]
+       [width 300]
+       [height 200]))
 
-;; Creamos la cuadrícula lógica inicial
-(define grid (make-grid rows cols))
+(define config-panel (new vertical-panel% [parent config-frame]))
 
-;; Creamos la ventana principal
-(define frame (new frame%
-                   [label "Busca Minas"]
-                   [width 400]
-                   [height 400]))
+;; Filas
+(new message% [parent config-panel] [label "Número de filas (8-15):"])
+(define filas-field (new text-field% [parent config-panel] [label "8"]))
 
-;; Panel para la cuadrícula
-(define grid-panel (new horizontal-panel% [parent frame]))
+;; Columnas
+(new message% [parent config-panel] [label "Número de columnas (8-15):"])
+(define cols-field (new text-field% [parent config-panel] [label "8"]))
 
-;; Usamos nested panels para simular la matriz de botones
-(for ([r rows])
-  (define row-panel (new vertical-panel% [parent grid-panel]))
-  (for ([c cols])
-    (new button%
-         [parent row-panel]
-         [label " "]
-         [callback
-          (lambda (btn evt)
-            (send btn set-label (format "~a,~a" r c)))])))
+;; Botón Iniciar
+(new button%
+     [parent config-panel]
+     [label "Iniciar Juego"]
+     [callback
+      (lambda (btn evt)
+        (define n-filas (string->number (send filas-field get-value)))
+        (define n-cols (string->number (send cols-field get-value)))
+        (if (or (not n-filas) (not n-cols)
+                (< n-filas 8) (> n-filas 15)
+                (< n-cols 8) (> n-cols 15))
+            (message-box "Error" "Debes ingresar valores entre 8 y 15.")
+            (begin
+              (send config-frame show #f) ;; cerrar ventana de configuración
+              (start-game n-filas n-cols))))])
 
-(send frame show #t)
+;; Mostrar ventana de configuración
+(send config-frame show #t)
 
+;; =============================================
+;; Función que abre la ventana principal del juego
+;; =============================================
+(define (start-game rows cols)
+  (define frame (new frame%
+                     [label (format "Busca Minas (~ax~a)" rows cols)]
+                     [width 700]
+                     [height 700]))
+  (define main-panel (new vertical-panel% [parent frame]))
+
+  ;; Botón Reiniciar arriba
+  (define top-panel (new horizontal-panel% [parent main-panel]))
+  (new button%
+       [parent top-panel]
+       [label "Reiniciar"]
+       [callback
+        (lambda (btn evt)
+          (send frame show #f) ;; cerrar ventana del juego
+          (send config-frame show #t))]) ;; volver a mostrar config
+
+  ;; Panel de la cuadrícula
+  (define grid-panel (new vertical-panel% [parent main-panel]))
+
+  ;; Crear la cuadrícula
+  (for ([r rows])
+    (define row-panel (new horizontal-panel% [parent grid-panel]))
+    (for ([c cols])
+      (new button%
+           [parent row-panel]
+           [label " "]
+           [min-width 30]
+           [min-height 30]
+           [callback
+            (lambda (btn evt)
+              ;; Por ahora solo cambia etiqueta
+              (send btn set-label (format "(~a,~a)" r c))
+              (displayln (format "Clic en (~a,~a)" r c)))])))
+
+  (send frame show #t))
