@@ -1,6 +1,6 @@
 #lang racket
 (require racket/gui/base)
-(require "logic.rkt") ;; tu lógica funcional
+(require "logic.rkt") ;; tu lógica funcional con make-bomb-grid y grid-ref
 
 ;; =============================================
 ;; Ventana de configuración
@@ -44,6 +44,9 @@
 ;; Función que abre la ventana principal del juego
 ;; =============================================
 (define (start-game rows cols)
+  ;; crear la grilla con bombas
+  (define grid (make-bomb-grid rows cols 5))
+
   (define frame (new frame%
                      [label (format "Busca Minas (~ax~a)" rows cols)]
                      [width 700]
@@ -69,13 +72,15 @@
     (for ([c cols])
       (new button%
            [parent row-panel]
-           [label " "]
+           [label " "] ;; inicialmente vacío
            [min-width 30]
            [min-height 30]
            [callback
-            (lambda (btn evt)
-              ;; Por ahora solo cambia etiqueta
-              (send btn set-label (format "(~a,~a)" r c))
-              (displayln (format "Clic en (~a,~a)" r c)))])))
+            (lambda (b e)
+              ;; mostrar el valor real de la grilla (0 o 1)
+              (define val (grid-ref grid r c))
+              (send b set-label (number->string val))
+              (displayln (format "Clic en (~a,~a): ~a" r c val)))])))
 
   (send frame show #t))
+
