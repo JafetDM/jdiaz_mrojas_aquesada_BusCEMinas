@@ -110,16 +110,17 @@
         (define bb (unbox board-box))
         (define btn (list-ref (list-ref btns rr) cc))
         (cond
-          ;; Si está marcada con bandera, mostrar bandera
-          [(and bb (marked? bb rr cc))
-           (send btn set-label "🚩")]
-          ;; Si está revelada, mostrar contenido
+           ;; Si está revelada, mostrar contenido
           [(and bb (revealed? bb rr cc))
            (cond
              [(bomb-at? bb rr cc) (send btn set-label "💣")]
              [else
               (define v (count-at bb rr cc))
               (send btn set-label (if (= v 0) "." (number->string v)))])]
+          ;; Si está marcada con bandera, mostrar bandera
+          [(and bb (marked? bb rr cc))
+           (send btn set-label "🚩")]
+         
           ;; Si no está revelada ni marcada, mostrar vacío
           [else
            (send btn set-label " ")]))))
@@ -180,6 +181,10 @@
                       (refresh-ui)
                       ;; Verificar victoria
                       (when (victory? new-board)
+                        ;; Revela todas las bombas, quitando banderas
+                        (define revealed (reveal-all-bombs new-board))
+                        (set-box! board-box revealed)
+                        (refresh-ui)
                         (message-box "¡Victoria!" "🎉 ¡Felicidades! Has ganado"))])]))]))))
 
   (send frame show #t))
