@@ -66,11 +66,13 @@
   ;; board-box empieza #f: construimos el tablero al PRIMER click,
   ;; garantizando que esa casilla sea 0 (mini-isla inicial).
   (define board-box (box #f))
+  ;; variable para controlar el modo de juego (revelar o bandera)
+  (define flag-mode-box (box #f))
 
   (define frame (new frame%
                      [label (format "Busca Minas (~a x ~a)" rows cols)]
                      [width (+ (* 30 cols) 50)]
-                     [height (+ (* 30 rows) 120)]))
+                     [height (+ (* 30 rows) 150)]))
   (define main-panel (new vertical-panel% [parent frame]))
 
   (define top-panel (new horizontal-panel% [parent main-panel]))
@@ -82,65 +84,102 @@
           (send frame show #f)
           (send config-frame show #t))])
 
+  ;; Botón para alternar modo bandera
+  (define flag-mode-btn
+    (new button%
+         [parent top-panel]
+         [label "Modo: Revelar"]
+         [callback
+          (lambda (btn evt)
+            (define current-mode (unbox flag-mode-box))
+            (set-box! flag-mode-box (not current-mode))
+            (send btn set-label (if (unbox flag-mode-box) 
+                                   "Modo: Bandera" 
+                                   "Modo: Revelar")))]))
+
+  ;; Panel de instrucciones
+  ;(define info-panel (new horizontal-panel% [parent main-panel]))
+  ;(new message% [parent info-panel] [label "Haz clic en 'Modo Bandera' y luego selecciona casillas para marcar"])
+
   (define grid-panel (new vertical-panel% [parent main-panel]))
+
+  ;; Función para actualizar la interfaz
+  (define (refresh-ui)
+    (for ([rr (in-range rows)])
+      (for ([cc (in-range cols)])
+        (define bb (unbox board-box))
+        (define btn (list-ref (list-ref btns rr) cc))
+        (cond
+          ;; Si está marcada con bandera, mostrar bandera
+          [(and bb (marked? bb rr cc))
+           (send btn set-label "🚩")]
+          ;; Si está revelada, mostrar contenido
+          [(and bb (revealed? bb rr cc))
+           (cond
+             [(bomb-at? bb rr cc) (send btn set-label "💣")]
+             [else
+              (define v (count-at bb rr cc))
+              (send btn set-label (if (= v 0) "." (number->string v)))])]
+          ;; Si no está revelada ni marcada, mostrar vacío
+          [else
+           (send btn set-label " ")]))))
 
   ;; matriz de botones para poder refrescar tras flood-fill
   (define btns
-  (for/list ([r (in-range rows)])
-    (define row-panel (new horizontal-panel% [parent grid-panel]))
-    (for/list ([c (in-range cols)])
-      (new button%
-           [parent row-panel]
-           [label " "]
-           [min-width 30]
-           [min-height 30]
-           [callback
-            (lambda (b e)
-              ;; construir tablero en primer click garantizando isla 0
-              (cond
-                [(not (unbox board-box))
-                 (set-box! board-box (make-board-safe-first rows cols num-bombs r c))])
-              (define board (unbox board-box))
-              (cond
-                ;; ==== CASO: BOMBA ====
-                [(bomb-at? board r c)
-                 ;; Revela la bomba tocada y todas las demás
-                 (define exploded
-                   (reveal-all-bombs (set-revealed board r c #t)))
-                 (set-box! board-box exploded)
-                 ;; refrescar toda la UI
-                 (for ([rr (in-range rows)])
-                   (for ([cc (in-range cols)])
-                     (define bb (unbox board-box))
-                     (define btn (list-ref (list-ref btns rr) cc))
-                     (cond
-                       [(revealed? bb rr cc)
-                        (cond
-                          [(bomb-at? bb rr cc) (send btn set-label "💣")]
-                          [else
-                           (define v (count-at bb rr cc))
-                           (send btn set-label (if (= v 0) "." (number->string v)))])]
-                       [else
-                        (send btn set-label " ")])))
-                 (message-box "Fin" "💥 Boom! Perdiste")]
-                ;; ==== CASO: NO BOMBA ====
-                [else
-                 (define new-board (reveal-at board r c))
-                 (set-box! board-box new-board)
-                 ;; refrescar todas las etiquetas según 'revealed'
-                 (for ([rr (in-range rows)])
-                   (for ([cc (in-range cols)])
-                     (define bb (unbox board-box))
-                     (define btn (list-ref (list-ref btns rr) cc))
-                     (cond
-                       [(revealed? bb rr cc)
-                        (cond
-                          [(bomb-at? bb rr cc) (send btn set-label "💣")]
-                          [else
-                           (define v (count-at bb rr cc))
-                           (send btn set-label (if (= v 0) "." (number->string v)))])]
-                       [else
-                        (send btn set-label " ")])))]))]))))
-
+    (for/list ([r (in-range rows)])
+      (define row-panel (new horizontal-panel% [parent grid-panel]))
+      (for/list ([c (in-range cols)])
+        (new button%
+             [parent row-panel]
+             [label " "]
+             [min-width 30]
+             [min-height 30]
+             [callback
+              (lambda (b e)
+                (cond
+                  ;; ==== MODO BANDERA ====
+                  [(unbox flag-mode-box)
+                   (cond
+                     ;; Si no hay tablero aún, no hacer nada en modo bandera
+                     [(not (unbox board-box)) (void)]
+                     [else
+                      (define board (unbox board-box))
+                      ;; Si la casilla ya está revelada, no se puede marcar
+                      (cond
+                        [(revealed? board r c) (void)]
+                        [else
+                         ;; Alternar el estado de la bandera
+                         (define current-marked (marked? board r c))
+                         (define new-board (set-marked board r c (not current-marked)))
+                         (set-box! board-box new-board)
+                         (refresh-ui)])])]
+                  ;; ==== MODO NORMAL (REVELAR) ====
+                  [else
+                   ;; construir tablero en primer click garantizando isla 0
+                   (cond
+                     [(not (unbox board-box))
+                      (set-box! board-box (make-board-safe-first rows cols num-bombs r c))])
+                   (define board (unbox board-box))
+                   ;; Si la casilla tiene bandera, no revelar
+                   (cond
+                     [(marked? board r c) (void)]
+                     ;; ==== CASO: BOMBA ====
+                     [(bomb-at? board r c)
+                      ;; Revela la bomba tocada y todas las demás
+                      (define exploded
+                        (reveal-all-bombs (set-revealed board r c #t)))
+                      (set-box! board-box exploded)
+                      ;; refrescar toda la UI
+                      (refresh-ui)
+                      (message-box "Fin" "💥 Boom! Perdiste")]
+                     ;; ==== CASO: NO BOMBA ====
+                     [else
+                      (define new-board (reveal-at board r c))
+                      (set-box! board-box new-board)
+                      ;; refrescar todas las etiquetas según 'revealed'
+                      (refresh-ui)
+                      ;; Verificar victoria
+                      (when (victory? new-board)
+                        (message-box "¡Victoria!" "🎉 ¡Felicidades! Has ganado"))])]))]))))
 
   (send frame show #t))
