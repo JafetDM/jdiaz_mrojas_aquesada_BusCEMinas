@@ -1,30 +1,28 @@
+;; LÓGICA DE LA INTERFAZ DEL BUSCAMINAS
 #lang racket
 (require racket/gui/base)
 (require "logic.rkt")
 
-;; =======================
 ;; Parámetros visuales
-;; =======================
-(define CELL 40)          ; tamaño de la celda en el juego
-(define CFG-W 500)        ; ancho de la pantalla de inicio (canvas)
-(define CFG-H 380)        ; alto de la pantalla de inicio (canvas)
+(define CELL 40)          ; tamaño de cada celda del tablero en píxeles
+(define CFG-W 500)        ; ancho de la ventana de inicio (canvas)
+(define CFG-H 380)        ; alto  de la ventana de inicio (canvas)
 
-;; =======================
 ;; Ventana de configuración (100% canvas)
-;; =======================
 (define config-frame
   (new frame%
        [label "Menú Pricipal"]
        [width CFG-W]
        [height CFG-H]))
 
-;; Estado de configuración en boxes (para no usar let/let*)
-(define cfg-rows-box (box 8))
-(define cfg-cols-box (box 8))
-(define cfg-diff-idx-box (box 0)) ; 0=Fácil,1=Intermedio,2=Difícil
-(define cfg-diff-list '("Fácil" "Intermedio" "Difícil"))
-(define cfg-hit-rects-box (box '()))
+;; Estado de configuración en boxes
+(define cfg-rows-box (box 8))             ; número de filas seleccionado
+(define cfg-cols-box (box 8))             ; número de columnas seleccionado
+(define cfg-diff-idx-box (box 0))         ; índice de dificultad: 0=Fácil,1=Intermedio,2=Difícil
+(define cfg-diff-list '("Fácil" "Intermedio" "Difícil")) ; nombres para mostrar
+(define cfg-hit-rects-box (box '()))      ; hitboxes de los “botones” dibujados en el canvas
 
+;; Convierte el nombre de dificultad en porcentaje de bombas
 (define (difficulty->pct s)
   (cond [(string=? s "Fácil") 0.10]
         [(string=? s "Intermedio") 0.15]
@@ -36,6 +34,7 @@
         [(> v hi) hi]
         [else v]))
 
+;; ¿(x,y) cae dentro del rectángulo (rx,ry,rw,rh)?
 (define (in-rect? x y rx ry rw rh)
   (and (>= x rx) (>= y ry) (< x (+ rx rw)) (< y (+ ry rh))))
 
@@ -53,21 +52,20 @@
   (define ty (+ y (quotient (- h th) 2)))
   (send dc draw-text label tx ty))
 
-;; =======================
-;; Declarar aquí para usarla desde el menú
-;; =======================
+;; Declarada aquí para usarla desde el menú
 (define start-game #f)
 
-;; =======================
-;; Canvas de configuración
-;; =======================
+;;                  Canvas de configuración
+;; Dibuja todo el menú de inicio y maneja sus “botones” por coordenadas.
+
 (define config-canvas
   (new (class canvas%
          (super-new)
 
+         ;; Dibujo del menú
          (define/override (on-paint)
            (define dc (send this get-dc))
-           ;; fondo
+           ;; fondo liso blanco
            (send dc set-brush "white" 'solid)
            (send dc set-pen "white" 1 'solid)
            (send dc draw-rectangle 0 0 CFG-W CFG-H)
@@ -92,16 +90,16 @@
            (send dc set-font (make-object font% 14 'modern 'normal 'bold))
            (send dc set-text-foreground "black")
 
-           ;; --- FILAS ---
+           ;;                   FILAS
            (define sec-x 60)
            (define sec-y 120)
            (send dc draw-text "Filas (8–15)" sec-x sec-y)
-           ;; botones -
+           ;; botones - / valor / +
            (define r-val (unbox cfg-rows-box))
            (define rx-minus (+ sec-x 0))
            (define ry-minus (+ sec-y 24))
            (draw-button dc rx-minus ry-minus 36 30 "−" (> r-val 8))
-           ;; número
+           ;; número mostrado
            (send dc set-font (make-object font% 16 'modern 'normal 'bold))
            (define r-box-x (+ rx-minus 44))
            (define r-box-y ry-minus)
@@ -112,7 +110,7 @@
            (define ry-plus ry-minus)
            (draw-button dc rx-plus ry-plus 36 30 "+" (< r-val 15))
 
-           ;; --- COLUMNAS ---
+           ;;                   COLUMNAS
            (send dc set-font (make-object font% 14 'modern 'normal 'bold))
            (define c-sec-x 300)
            (define c-sec-y 120)
@@ -130,7 +128,7 @@
            (define cy-plus cy-minus)
            (draw-button dc cx-plus cy-plus 36 30 "+" (< c-val 15))
 
-           ;; --- DIFICULTAD ---
+           ;;                   DIFICULTAD 
            (define d-sec-x 60)
            (define d-sec-y 200)
            (send dc set-font (make-object font% 14 'modern 'normal 'bold))
@@ -139,18 +137,18 @@
            (define d-box-x (+ d-sec-x 0))
            (define d-box-y (+ d-sec-y 24))
            (draw-button dc d-box-x d-box-y 180 30 d-val #t)
-           ;; pista: tocar el recuadro alterna
+           ;; pista visual debajo
            (send dc set-font (make-object font% 10 'modern))
            (send dc set-text-foreground "gray")
            (send dc draw-text "Toca para alternar" (+ d-box-x 24) (+ d-box-y 36))
 
-           ;; --- BOTÓN INICIAR ---
+           ;;                   BOTÓN INICIAR
            (define start-x 300)
            (define start-y 210)
            (send dc set-font (make-object font% 14 'modern 'normal 'bold))
            (draw-button dc start-x start-y 130 44 "Iniciar" #t)
 
-           ;; guardamos “coordenadas” en propiedades del canvas para on-event
+           ;; Guardamos las “hitboxes” para detección de clic en on-event
            (set-box! cfg-hit-rects-box
                     (list (cons 'r- (list rx-minus ry-minus 36 30))
                           (cons 'r+ (list rx-plus  ry-plus  36 30))
@@ -159,13 +157,14 @@
                           (cons 'd  (list d-box-x  d-box-y  180 30))
                           (cons 'go (list start-x  start-y  130 44)))))
 
+         ;; Manejo de clics en el menú (hit-testing contra rectángulos)
          (define/override (on-event e)
            (when (send e button-down?)
              (define x (send e get-x))
              (define y (send e get-y))
              (define hit (unbox cfg-hit-rects-box))
 
-             ;; helper: click dentro de clave-rect
+             ;; helper: ¿el clic cae dentro del rect asociado a 'sym?
              (define (hit? sym)
                (define rect (assoc sym hit))
                (and rect
@@ -196,12 +195,12 @@
                 (define v (unbox cfg-cols-box))
                 (set-box! cfg-cols-box (clamp (+ v 1) 8 15))
                 (send this refresh)]
-               ;; dificultad (ciclo 0->1->2->0)
+               ;; dificultad (0 → 1 → 2 → 0)
                [(hit? 'd)
                 (define i (unbox cfg-diff-idx-box))
                 (set-box! cfg-diff-idx-box (modulo (+ i 1) 3))
                 (send this refresh)]
-               ;; INICIAR
+               ;; INICIAR: calcula #bombas según dificultad y abre el juego
                [(hit? 'go)
                 (define rows (unbox cfg-rows-box))
                 (define cols (unbox cfg-cols-box))
@@ -217,15 +216,16 @@
        [min-width CFG-W]
        [min-height CFG-H]))
 
+;; Mostramos el menú de inicio apenas arranca el programa
 (send config-frame show #t)
 
-;; =======================
-;; Ventana principal (canvas% juego)
-;; =======================
+
+;;                  Ventana principal (canvas% juego)
+
 (set! start-game
   (lambda (rows cols num-bombs dificultad-label)
-    (define board-box (box #f))
-    (define game-over-box (box #f))
+    (define board-box (box #f))     ; tablero (se crea en el primer clic seguro)
+    (define game-over-box (box #f)) ; bandera para deshabilitar interacción al terminar
 
     (define frame
       (new frame%
@@ -234,9 +234,11 @@
            [width (+ (* CELL cols) 50)]
            [height (+ (* CELL rows) 170)]))
 
+    ;; Panel principal centrando el canvas del juego
     (define main-panel (new vertical-panel% [parent frame] [alignment '(center top)] [horiz-margin 20] [vert-margin 10]))
     (define top-panel  (new horizontal-panel% [parent main-panel]))
 
+    ;; “Botón” Menú dibujado como canvas para que coincida el estilo con la pantalla de inicio
     (define menu-btn-w 100)
     (define menu-btn-h 36)
 
@@ -257,18 +259,18 @@
       [stretchable-width #f]
       [stretchable-height #f]))
 
-    ;; diálogo de fin
+    ;; diálogo de fin (gana/pierde) con botones “Reiniciar” y “Volver al menú”
     (define (show-game-over-dialog titulo mensaje)
       (set-box! game-over-box #t)
 
-      ;; === tamaños: mensaje grande, botones pequeños ===
+      ;; tamaños y layout del diálogo (mensaje grande + botones compactos)
       (define btn-restart-w 95)
       (define btn-menu-w    148)
       (define btn-h         28)
       (define spacing       15)
       (define total-width (+ btn-restart-w btn-menu-w spacing))
 
-      ;; ventana más ancha/alta para que quepa el mensaje
+      ;; ventana dimensionada para que quepa el texto grande
       (define dialog-w (max 420 (+ total-width 80)))
       (define dialog-h 260)
 
@@ -286,15 +288,15 @@
                     [horiz-margin 0]
                     [vert-margin 12]))
 
-      ;; ===== Mensaje GRANDE en canvas =====
-      (define msg-w (- dialog-w 20)) ; un poco de margen lateral
-      (define msg-h 120)             ; más alto que antes
+      ;; mensaje en canvas para ajustar tamaño de fuente al ancho disponible
+      (define msg-w (- dialog-w 20)) ; margen lateral
+      (define msg-h 120)             ; alto del área del texto
       (new
       (class canvas%
         (super-new)
         (define/override (on-paint)
           (define dc (send this get-dc))
-          ;; intenta con 20, si no cabe, baja a 18 o 16
+          ;; probamos 15/18/16 para ajustar al ancho disponible
           (define fsize 15)
           (define font (make-object font% fsize 'modern 'normal 'bold))
           (send dc set-font font)
@@ -310,7 +312,10 @@
               [else font3]))
           (send dc set-font use-font)
           (send dc set-text-foreground
-                (if (string=? titulo "¡Victoria!") "forestgreen" "tomato"))
+            (if (or (string=? titulo "Ganaste!")
+                    (string=? mensaje "Felicidades por no explotar :)"))
+                "forestgreen"
+                "tomato"))
           (define-values (tfinal-w tfinal-h _dx4 _dy4) (send dc get-text-extent mensaje))
           (define tx (max 0 (quotient (- (send this get-width)  tfinal-w) 2)))
           (define ty (max 0 (quotient (- (send this get-height) tfinal-h) 2)))
@@ -321,7 +326,7 @@
       [stretchable-width #f]
       [stretchable-height #f])
 
-      ;; wrap centrador y fila de botones (sin estirar)
+      ;; contenedor centrado para la fila de botones
       (define center-wrap
         (new horizontal-panel%
             [parent v]
@@ -335,7 +340,7 @@
             [spacing spacing]
             [stretchable-width #f] [stretchable-height #f]))
 
-      ;; --- Botón Reiniciar (canvas estilo inicio) ---
+      ;; Botón Reiniciar 
       (new
       (class canvas%
         (super-new)
@@ -351,7 +356,7 @@
       [min-width btn-restart-w] [min-height btn-h]
       [stretchable-width #f] [stretchable-height #f])
 
-      ;; --- Botón Volver al menú (canvas estilo inicio) ---
+      ;; Botón Volver al menú
       (new
       (class canvas%
         (super-new)
@@ -371,15 +376,16 @@
 
 
 
-    ;; canvas del juego
+    ;;                  CANVAS DEL JUEGO
     (define canvas
       (new
        (class canvas%
          (super-new)
 
+         ;; Dibujo del tablero y contenido de cada celda
          (define/override (on-paint)
            (define dc (send this get-dc))
-           ;; fondo
+           ;; fondo general del área jugable
            (send dc set-brush "white" 'solid)
            (send dc set-pen "white" 1 'solid)
            (send dc draw-rectangle 0 0 (* CELL cols) (* CELL rows))
@@ -396,10 +402,10 @@
                 (define bomb? (and bb (bomb-at? bb r c)))
                 (define v (if (and rev? (not bomb?)) (count-at bb r c) -1))
 
-                ;; fondo celda:
-                ;; - oculto:         gainsboro
-                ;; - revelado 0:     silver        (más oscuro)
-                ;; - revelado >0 o 💣: lightgray
+                ;; fondo de la celda:
+                ;; - oculta:        gainsboro
+                ;; - revelada 0:    silver   (más oscuro para diferenciar “isla”)
+                ;; - revelada >0 ó 💣: lightgray
                 (send dc set-pen "gray" 1 'solid)
                 (send dc set-brush
                       (cond
@@ -409,7 +415,7 @@
                       'solid)
                 (send dc draw-rectangle x y CELL CELL)
 
-                ;; contenido (priorizar bomba revelada sobre bandera)
+                ;; contenido (prioridad: bomba revelada > bandera > número)
                 (cond
                   [(and rev? bomb?)
                    (send dc set-text-foreground "black")
@@ -419,7 +425,7 @@
                    (send dc draw-text "🚩" (+ x 8) (+ y 6))]
                   [(and rev? (not bomb?))
                    (if (= v 0)
-                       (void)
+                       (void) ; los 0 no se dibujan, solo el fondo más oscuro
                        (begin
                          (send dc set-text-foreground
                                (cond [(= v 1) "blue"]
@@ -433,7 +439,7 @@
 
                   [else (void)])
 
-                ;; borde
+                ;; borde de la celda
                 (send dc set-pen "dimgray" 1 'solid)
                 (send dc set-brush "transparent" 'transparent)
                 (send dc draw-rectangle x y CELL CELL)
@@ -441,7 +447,8 @@
                 (draw-cells r (+ c 1))]))
            (draw-cells 0 0))
 
-         ;; Click izquierdo = revelar, derecho = bandera
+         ;; Click izquierdo = revelar, derecho = bandera.
+         ;; Primer clic: se construye un tablero con “isla” inicial segura (conteo 0).
          (define/override (on-event e)
            (define et (send e get-event-type)) ; 'left-down o 'right-down
            (when (and (not (unbox game-over-box))
@@ -454,7 +461,7 @@
                [(or (< r 0) (>= r rows) (< c 0) (>= c cols)) (void)]
                [else
                 (cond
-                  ;; Clic DERECHO -> alternar bandera (si ya hay tablero)
+                  ;; Clic DERECHO: alterna bandera (si ya existe tablero y la celda no está revelada)
                   [(eq? et 'right-down)
                    (cond
                      [(not (unbox board-box)) (void)]
@@ -467,23 +474,26 @@
                          (set-box! board-box new-board)
                          (send this refresh)])])]
 
-                  ;; Clic IZQUIERDO -> revelar (primer clic crea isla segura)
+                  ;; Clic IZQUIERDO: revelar (construye tablero seguro si es el primer clic)
                   [else
                    (cond
                      [(not (unbox board-box))
                       (set-box! board-box (make-board-safe-first rows cols num-bombs r c))])
                    (define board (unbox board-box))
                    (cond
-                     [(marked? board r c) (void)]
+                     [(marked? board r c) (void)] ; no revelamos si tiene bandera
                      [(bomb-at? board r c)
+                      ;; Perder: revelamos todas las bombas, refrescamos y mostramos diálogo
                       (define exploded (reveal-all-bombs (set-revealed board r c #t)))
                       (set-box! board-box exploded)
                       (send this refresh)
                       (show-game-over-dialog "Fin del juego" "Nooo, explotaste 💥")]
                      [else
+                      ;; Revelar normal (con posible propagación de ceros)
                       (define new-board (reveal-at board r c))
                       (set-box! board-box new-board)
                       (send this refresh)
+                      ;; Chequear victoria y, si aplica, revelar bombas y bloquear
                       (when (victory? new-board)
                         (define revealed-final (reveal-all-bombs new-board))
                         (set-box! board-box revealed-final)
@@ -496,6 +506,5 @@
        [stretchable-width #f]
        [stretchable-height #f]))
 
+    ;; Mostrar la ventana de juego
     (send frame show #t)))
-
-
